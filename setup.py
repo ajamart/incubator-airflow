@@ -105,6 +105,7 @@ async = [
     'gevent>=0.13'
 ]
 azure = ['azure-storage>=0.34.0']
+sendgrid = ['sendgrid>=5.2.0']
 celery = [
     'celery>=4.0.0',
     'flower>=0.7.3'
@@ -143,7 +144,7 @@ hive = [
     'impyla>=0.13.3',
     'unicodecsv>=0.14.1'
 ]
-jdbc = ['jaydebeapi>=0.2.0']
+jdbc = ['jaydebeapi>=1.1.1']
 mssql = ['pymssql>=2.1.1', 'unicodecsv>=0.14.1']
 mysql = ['mysqlclient>=1.3.6']
 rabbitmq = ['librabbitmq>=1.6.1']
@@ -275,6 +276,7 @@ def do_setup():
             's3': s3,
             'salesforce': salesforce,
             'samba': samba,
+            'sendgrid' : sendgrid,
             'slack': slack,
             'ssh': ssh,
             'statsd': statsd,

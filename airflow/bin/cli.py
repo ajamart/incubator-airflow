@@ -40,6 +40,7 @@ import traceback
 import time
 import psutil
 import re
+from urllib.parse import urlunparse
 
 import airflow
 from airflow import api
@@ -924,11 +925,15 @@ def version(args):  # noqa
     print(settings.HEADER + "  v" + airflow.__version__)
 
 
+alternative_conn_specs = ['conn_type', 'conn_host',
+                          'conn_login', 'conn_password', 'conn_schema', 'conn_port']
+
+
 def connections(args):
     if args.list:
         # Check that no other flags were passed to the command
         invalid_args = list()
-        for arg in ['conn_id', 'conn_uri', 'conn_extra']:
+        for arg in ['conn_id', 'conn_uri', 'conn_extra'] + alternative_conn_specs:
             if getattr(args, arg) is not None:
                 invalid_args.append(arg)
         if invalid_args:
@@ -953,7 +958,7 @@ def connections(args):
     if args.delete:
         # Check that only the `conn_id` arg was passed to the command
         invalid_args = list()
-        for arg in ['conn_uri', 'conn_extra']:
+        for arg in ['conn_uri', 'conn_extra'] + alternative_conn_specs:
             if getattr(args, arg) is not None:
                 invalid_args.append(arg)
         if invalid_args:
@@ -997,16 +1002,32 @@ def connections(args):
     if args.add:
         # Check that the conn_id and conn_uri args were passed to the command:
         missing_args = list()
-        for arg in ['conn_id', 'conn_uri']:
-            if getattr(args, arg) is None:
-                missing_args.append(arg)
+        invalid_args = list()
+        if not args.conn_id:
+            missing_args.append('conn_id')
+        if args.conn_uri:
+            for arg in alternative_conn_specs:
+                if getattr(args, arg) is not None:
+                    invalid_args.append(arg)
+        elif not args.conn_type:
+            missing_args.append('conn_uri or conn_type')
         if missing_args:
             msg = ('\n\tThe following args are required to add a connection:' +
                    ' {missing!r}\n'.format(missing=missing_args))
             print(msg)
+        if invalid_args:
+            msg = ('\n\tThe following args are not compatible with the ' +
+                   '--add flag and --conn_uri flag: {invalid!r}\n')
+            msg = msg.format(invalid=invalid_args)
+            print(msg)
+        if missing_args or invalid_args:
             return
 
-        new_conn = Connection(conn_id=args.conn_id, uri=args.conn_uri)
+        if args.conn_uri:
+            new_conn = Connection(conn_id=args.conn_id, uri=args.conn_uri)
+        else:
+            new_conn = Connection(conn_id=args.conn_id, conn_type=args.conn_type, host=args.conn_host,
+                                  login=args.conn_login, password=args.conn_password, schema=args.conn_schema, port=args.conn_port)
         if args.conn_extra is not None:
             new_conn.set_extra(args.conn_extra)
 
@@ -1017,7 +1038,8 @@ def connections(args):
             session.add(new_conn)
             session.commit()
             msg = '\n\tSuccessfully added `conn_id`={conn_id} : {uri}\n'
-            msg = msg.format(conn_id=new_conn.conn_id, uri=args.conn_uri)
+            msg = msg.format(conn_id=new_conn.conn_id, uri=args.conn_uri or urlunparse((args.conn_type, '{login}:{password}@{host}:{port}'.format(
+                login=args.conn_login or '', password=args.conn_password or '', host=args.conn_host or '', port=args.conn_port or ''), args.conn_schema or '', '', '', '')))
             print(msg)
         else:
             msg = '\n\tA connection with `conn_id`={conn_id} already exists\n'
@@ -1035,6 +1057,10 @@ def flower(args):
     if args.broker_api:
         api = '--broker_api=' + args.broker_api
 
+    url_prefix = ''
+    if args.url_prefix:
+        url_prefix = '--url-prefix=' + args.url_prefix
+
     flower_conf = ''
     if args.flower_conf:
         flower_conf = '--conf=' + args.flower_conf
@@ -1051,7 +1077,8 @@ def flower(args):
         )
 
         with ctx:
-            os.execvp("flower", ['flower', '-b', broka, address, port, api, flower_conf])
+            os.execvp("flower", ['flower', '-b', broka, address, port, api, flower_conf,
+                                 url_prefix])
 
         stdout.close()
         stderr.close()
@@ -1059,7 +1086,8 @@ def flower(args):
         signal.signal(signal.SIGINT, sigint_handler)
         signal.signal(signal.SIGTERM, sigint_handler)
 
-        os.execvp("flower", ['flower', '-b', broka, address, port, api, flower_conf])
+        os.execvp("flower", ['flower', '-b', broka, address, port, api, flower_conf,
+                             url_prefix])
 
 
 def kerberos(args):  # noqa
@@ -1298,6 +1326,10 @@ class CLIFactory(object):
             default=conf.get('webserver', 'WEB_SERVER_PORT'),
             type=int,
             help="The port on which to run the server"),
+        'url_prefix': Arg(
+            ('-u', "--url_prefix"),
+            default=conf.get('webserver', 'WEB_SERVER_URL_PREFIX'),
+            help="URL prefix for the server"),
         'ssl_cert': Arg(
             ("--ssl_cert",),
             default=conf.get('webserver', 'WEB_SERVER_SSL_CERT'),
@@ -1391,6 +1423,10 @@ class CLIFactory(object):
         'flower_conf': Arg(
             ("-fc", "--flower_conf"),
             help="Configuration file for flower"),
+        'flower_url_prefix': Arg(
+            ("-u", "--url_prefix"),
+            default=conf.get('celery', 'FLOWER_URL_PREFIX'),
+            help="URL prefix for Flower"),
         'task_params': Arg(
             ("-tp", "--task_params"),
             help="Sends a JSON params dict to the task"),
@@ -1413,7 +1449,31 @@ class CLIFactory(object):
             type=str),
         'conn_uri': Arg(
             ('--conn_uri',),
-            help='Connection URI, required to add a connection',
+            help='Connection URI, required to add a connection without conn_type',
+            type=str),
+        'conn_type': Arg(
+            ('--conn_type',),
+            help='Connection type, required to add a connection without conn_uri',
+            type=str),
+        'conn_host': Arg(
+            ('--conn_host',),
+            help='Connection host, optional when adding a connection',
+            type=str),
+        'conn_login': Arg(
+            ('--conn_login',),
+            help='Connection login, optional when adding a connection',
+            type=str),
+        'conn_password': Arg(
+            ('--conn_password',),
+            help='Connection password, optional when adding a connection',
+            type=str),
+        'conn_schema': Arg(
+            ('--conn_schema',),
+            help='Connection schema, optional when adding a connection',
+            type=str),
+        'conn_port': Arg(
+            ('--conn_port',),
+            help='Connection port, optional when adding a connection',
             type=str),
         'conn_extra': Arg(
             ('--conn_extra',),
@@ -1517,7 +1577,7 @@ class CLIFactory(object):
             'func': webserver,
             'help': "Start a Airflow webserver instance",
             'args': ('port', 'workers', 'workerclass', 'worker_timeout', 'hostname',
-                     'pid', 'daemon', 'stdout', 'stderr', 'access_logfile',
+                     'url_prefix', 'pid', 'daemon', 'stdout', 'stderr', 'access_logfile',
                      'error_logfile', 'log_file', 'ssl_cert', 'ssl_key', 'debug'),
         }, {
             'func': resetdb,
@@ -1541,8 +1601,9 @@ class CLIFactory(object):
         }, {
             'func': flower,
             'help': "Start a Celery Flower",
-            'args': ('flower_hostname', 'flower_port', 'flower_conf', 'broker_api',
-                     'pid', 'daemon', 'stdout', 'stderr', 'log_file'),
+            'args': ('flower_hostname', 'flower_port', 'flower_conf',
+                     'flower_url_prefix', 'broker_api', 'pid', 'daemon',
+                     'stdout', 'stderr', 'log_file'),
         }, {
             'func': version,
             'help': "Show the version",
@@ -1551,7 +1612,7 @@ class CLIFactory(object):
             'func': connections,
             'help': "List/Add/Delete connections",
             'args': ('list_connections', 'add_connection', 'delete_connection',
-                     'conn_id', 'conn_uri', 'conn_extra'),
+                     'conn_id', 'conn_uri', 'conn_extra') + tuple(alternative_conn_specs),
         },
     )
     subparsers_dict = {sp['func'].__name__: sp for sp in subparsers}

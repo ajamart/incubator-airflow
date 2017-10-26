@@ -436,3 +436,9 @@ as_dict.__doc__ = conf.as_dict.__doc__
 
 def set(section, option, value):  # noqa
     return conf.set(section, option, value)
+
+def get_url_prefix():
+    url_prefix = get('webserver', 'WEB_SERVER_URL_PREFIX')
+    if not url_prefix or url_prefix == '/':
+        url_prefix = ""
+    return url_prefix

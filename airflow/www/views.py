@@ -37,7 +37,7 @@ import sqlalchemy as sqla
 from sqlalchemy import or_, desc, and_, union_all
 
 from flask import (
-    abort, redirect, url_for, request, Markup, Response, current_app, render_template, 
+    abort, redirect, url_for, request, Markup, Response, current_app, render_template,
     make_response)
 from flask_admin import BaseView, expose, AdminIndexView
 from flask_admin.contrib.sqla import ModelView
@@ -180,7 +180,7 @@ def label_link(v, c, m, p):
 
 
 def pool_link(v, c, m, p):
-    url = '/admin/taskinstance/?flt1_pool_equals=' + m.pool
+    url = conf.get_url_prefix() + '/admin/taskinstance/?flt1_pool_equals=' + m.pool
     return Markup("<a href='{url}'>{m.pool}</a>".format(**locals()))
 
 
@@ -243,6 +243,7 @@ def data_profiling_required(f):
 
 def fused_slots(v, c, m, p):
     url = (
+        conf.get_url_prefix() +
         '/admin/taskinstance/' +
         '?flt1_pool_equals=' + m.pool +
         '&flt2_state_equals=running')
@@ -251,6 +252,7 @@ def fused_slots(v, c, m, p):
 
 def fqueued_slots(v, c, m, p):
     url = (
+        conf.get_url_prefix() +
         '/admin/taskinstance/' +
         '?flt1_pool_equals=' + m.pool +
         '&flt2_state_equals=queued&sort=10&desc=1')
@@ -458,7 +460,7 @@ class Airflow(BaseView):
                 "Not supported anymore as the license was incompatible, "
                 "sorry",
                 "danger")
-            redirect('/admin/chart/')
+            redirect(conf.get_url_prefix() + '/admin/chart/')
 
         sql = ""
         if chart.show_sql:
@@ -748,7 +750,7 @@ class Airflow(BaseView):
                 "Task [{}.{}] doesn't seem to exist"
                 " at the moment".format(dag_id, task_id),
                 "error")
-            return redirect('/admin/')
+            return redirect(conf.get_url_prefix() + '/admin/')
         task = copy.copy(dag.get_task(task_id))
         task.resolve_template_files()
         ti = TI(task=task, execution_date=dttm)
@@ -823,7 +825,7 @@ class Airflow(BaseView):
                 "Task [{}.{}] doesn't seem to exist"
                 " at the moment".format(dag_id, task_id),
                 "error")
-            return redirect('/admin/')
+            return redirect(conf.get_url_prefix() + '/admin/')
 
         session = Session()
         xcomlist = session.query(XCom).filter(
@@ -909,7 +911,7 @@ class Airflow(BaseView):
     @wwwutils.notify_owner
     def trigger(self):
         dag_id = request.args.get('dag_id')
-        origin = request.args.get('origin') or "/admin/"
+        origin = request.args.get('origin') or conf.get_url_prefix() + "/admin/"
         dag = dagbag.get_dag(dag_id)
 
         if not dag:
@@ -1270,7 +1272,7 @@ class Airflow(BaseView):
         dag = dagbag.get_dag(dag_id)
         if dag_id not in dagbag.dags:
             flash('DAG "{0}" seems to be missing.'.format(dag_id), "error")
-            return redirect('/admin/')
+            return redirect(conf.get_url_prefix() + '/admin/')
 
         root = request.args.get('root')
         if root:
@@ -1371,7 +1373,8 @@ class Airflow(BaseView):
             task_instances=json.dumps(task_instances, indent=2),
             tasks=json.dumps(tasks, indent=2),
             nodes=json.dumps(nodes, indent=2),
-            edges=json.dumps(edges, indent=2), )
+            edges=json.dumps(edges, indent=2),
+            url_prefix=conf.get_url_prefix())
 
     @expose('/duration')
     @login_required
@@ -1444,8 +1447,10 @@ class Airflow(BaseView):
         # update the y Axis on both charts to have the correct time units
         chart.create_y_axis('yAxis', format='.02f', custom_format=False,
                             label='Duration ({})'.format(y_unit))
+        chart.axislist['yAxis']['axisLabelDistance'] = '40'
         cum_chart.create_y_axis('yAxis', format='.02f', custom_format=False,
                                 label='Duration ({})'.format(cum_y_unit))
+        cum_chart.axislist['yAxis']['axisLabelDistance'] = '40'
         for task in dag.tasks:
             if x[task.task_id]:
                 chart.add_serie(name=task.task_id, x=x[task.task_id],
@@ -1466,7 +1471,7 @@ class Airflow(BaseView):
         cum_chart.buildcontent()
         s_index = cum_chart.htmlcontent.rfind('});')
         cum_chart.htmlcontent = (cum_chart.htmlcontent[:s_index] +
-                                 "$( document ).trigger('chartload')" +
+                                 "$(function() {$( document ).trigger('chartload') })" +
                                  cum_chart.htmlcontent[s_index:])
 
         return self.render(
@@ -1594,6 +1599,7 @@ class Airflow(BaseView):
         # update the y Axis to have the correct time units
         chart.create_y_axis('yAxis', format='.02f', custom_format=False,
                             label='Landing Time ({})'.format(y_unit))
+        chart.axislist['yAxis']['axisLabelDistance'] = '40'
         for task in dag.tasks:
             if x[task.task_id]:
                 chart.add_serie(name=task.task_id, x=x[task.task_id],
@@ -1788,7 +1794,7 @@ class Airflow(BaseView):
             for k, v in d.items():
                 models.Variable.set(k, v, serialize_json=isinstance(v, dict))
             flash("{} variable(s) successfully updated.".format(len(d)))
-        return redirect('/admin/variable')
+        return redirect(conf.get_url_prefix() + '/admin/variable')
 
 
 class HomeView(AdminIndexView):
@@ -2488,7 +2494,6 @@ class TaskInstanceModelView(ModelViewOnly):
         'start_date', 'end_date', 'duration', 'job_id', 'hostname',
         'unixname', 'priority_weight', 'queue', 'queued_dttm', 'try_number',
         'pool', 'log_url')
-    can_delete = True
     page_size = PAGE_SIZE
 
     @action('set_running', "Set state to 'running'", None)
@@ -2507,20 +2512,39 @@ class TaskInstanceModelView(ModelViewOnly):
     def action_set_retry(self, ids):
         self.set_task_instance_state(ids, State.UP_FOR_RETRY)
 
-    @action('delete',
-            lazy_gettext('Delete'),
-            lazy_gettext('Are you sure you want to delete selected records?'))
-    def action_delete(self, ids):
-        """
-        As a workaround for AIRFLOW-277, this method overrides Flask-Admin's ModelView.action_delete().
+    @provide_session
+    @action('clear',
+            lazy_gettext('Clear'),
+            lazy_gettext(
+                'Are you sure you want to clear the state of the selected task instance(s)'
+                ' and set their dagruns to the running state?'))
+    def action_clear(self, ids, session=None):
+        try:
+            TI = models.TaskInstance
 
-        TODO: this method should be removed once the below bug is fixed on Flask-Admin side.
-        https://github.com/flask-admin/flask-admin/issues/1226
-        """
-        if 'sqlite' in conf.get('core', 'sql_alchemy_conn'):
-            self.delete_task_instances(ids)
-        else:
-            super(TaskInstanceModelView, self).action_delete(ids)
+            dag_to_tis = {}
+
+            for id in ids:
+                task_id, dag_id, execution_date = id.split(',')
+
+                ti = session.query(TI).filter(TI.task_id == task_id,
+                                              TI.dag_id == dag_id,
+                                              TI.execution_date == execution_date).one()
+
+                dag = dagbag.get_dag(dag_id)
+                tis = dag_to_tis.setdefault(dag, [])
+                tis.append(ti)
+
+            for dag, tis in dag_to_tis.items():
+                models.clear_task_instances(tis, session, dag=dag)
+
+            session.commit()
+            flash("{0} task instances have been cleared".format(len(ids)))
+
+        except Exception as ex:
+            if not self.handle_view_exception(ex):
+                raise Exception("Ooops")
+            flash('Failed to clear task instances', 'error')
 
     @provide_session
     def set_task_instance_state(self, ids, target_state, session=None):
@@ -2541,24 +2565,6 @@ class TaskInstanceModelView(ModelViewOnly):
             if not self.handle_view_exception(ex):
                 raise Exception("Ooops")
             flash('Failed to set state', 'error')
-
-    @provide_session
-    def delete_task_instances(self, ids, session=None):
-        try:
-            TI = models.TaskInstance
-            count = 0
-            for id in ids:
-                task_id, dag_id, execution_date = id.split(',')
-                execution_date = datetime.strptime(execution_date, '%Y-%m-%d %H:%M:%S')
-                count += session.query(TI).filter(TI.task_id == task_id,
-                                                  TI.dag_id == dag_id,
-                                                  TI.execution_date == execution_date).delete()
-            session.commit()
-            flash("{count} task instances were deleted".format(**locals()))
-        except Exception as ex:
-            if not self.handle_view_exception(ex):
-                raise Exception("Ooops")
-            flash('Failed to delete', 'error')
 
     def get_one(self, id):
         """
@@ -2612,7 +2618,7 @@ class ConnectionModelView(wwwutils.SuperUserMixin, AirflowModelView):
         'extra__google_cloud_platform__project': StringField('Project Id'),
         'extra__google_cloud_platform__key_path': StringField('Keyfile Path'),
         'extra__google_cloud_platform__keyfile_dict': PasswordField('Keyfile JSON'),
-        'extra__google_cloud_platform__scope': StringField('Scopes (comma seperated)'),
+        'extra__google_cloud_platform__scope': StringField('Scopes (comma separated)'),
 
     }
     form_choices = {
@@ -2711,7 +2717,7 @@ class ConfigurationView(wwwutils.SuperUserMixin, BaseView):
 
         else:
             config = (
-                "# You Airflow administrator chose not to expose the "
+                "# Your Airflow administrator chose not to expose the "
                 "configuration, most likely for security reasons.")
             table = None
         if raw:
