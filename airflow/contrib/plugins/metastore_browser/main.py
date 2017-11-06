@@ -24,6 +24,7 @@ from airflow.hooks.mysql_hook import MySqlHook
 from airflow.hooks.presto_hook import PrestoHook
 from airflow.plugins_manager import AirflowPlugin
 from airflow.www import utils as wwwutils
+from airflow import configuration
 
 METASTORE_CONN_ID = 'metastore_default'
 METASTORE_MYSQL_CONN_ID = 'metastore_mysql'
@@ -54,7 +55,8 @@ class MetastoreBrowserView(BaseView, wwwutils.DataProfilingMixin):
         h = MySqlHook(METASTORE_MYSQL_CONN_ID)
         df = h.get_pandas_df(sql)
         df.db = (
-            '<a href="/admin/metastorebrowserview/db/?db=' +
+            '<a href=' + configuration.get_url_prefix() +
+            '"/admin/metastorebrowserview/db/?db=' +
             df.db + '">' + df.db + '</a>')
         table = df.to_html(
             classes="table table-striped table-bordered table-hover",
@@ -62,7 +64,8 @@ class MetastoreBrowserView(BaseView, wwwutils.DataProfilingMixin):
             escape=False,
             na_rep='',)
         return self.render(
-            "metastore_browser/dbs.html", table=table)
+            "metastore_browser/dbs.html", table=table,
+            url_prefix=configuration.get_url_prefix())
 
     @expose('/table/')
     def table(self):
@@ -71,7 +74,8 @@ class MetastoreBrowserView(BaseView, wwwutils.DataProfilingMixin):
         table = m.get_table(table_name)
         return self.render(
             "metastore_browser/table.html",
-            table=table, table_name=table_name, datetime=datetime, int=int)
+            table=table, table_name=table_name, datetime=datetime, int=int,
+            url_prefix=configuration.get_url_prefix())
 
     @expose('/db/')
     def db(self):
@@ -79,7 +83,8 @@ class MetastoreBrowserView(BaseView, wwwutils.DataProfilingMixin):
         m = HiveMetastoreHook(METASTORE_CONN_ID)
         tables = sorted(m.get_tables(db=db), key=lambda x: x.tableName)
         return self.render(
-            "metastore_browser/db.html", tables=tables, db=db)
+            "metastore_browser/db.html", tables=tables, db=db,
+            url_prefix=configuration.get_url_prefix())
 
     @wwwutils.gzipped
     @expose('/partitions/')

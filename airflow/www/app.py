@@ -30,13 +30,12 @@ from airflow.www.blueprints import routes
 from airflow.logging_config import configure_logging
 from airflow import jobs
 from airflow import settings
-from airflow import configuration
 
 
 def create_app(config=None, testing=False):
     app = Flask(__name__)
-    app.secret_key = configuration.get('webserver', 'SECRET_KEY')
-    app.config['LOGIN_DISABLED'] = not configuration.getboolean('webserver', 'AUTHENTICATE')
+    app.secret_key = conf.get('webserver', 'SECRET_KEY')
+    app.config['LOGIN_DISABLED'] = not conf.getboolean('webserver', 'AUTHENTICATE')
 
     csrf.init_app(app)
 
@@ -61,8 +60,10 @@ def create_app(config=None, testing=False):
 
         admin = Admin(
             app, name='Airflow',
-            static_url_path='/admin',
-            index_view=views.HomeView(endpoint='', url='/admin', name="DAGs"),
+            static_url_path=conf.get_url_prefix() + '/admin',
+            index_view=views.HomeView(endpoint='',
+                                      url=conf.get_url_prefix() + '/admin',
+                                      name="DAGs"),
             template_mode='bootstrap3',
         )
         av = admin.add_view
