@@ -18,18 +18,18 @@ import six
 
 class KubernetesRequestFactory():
     """
-        Create requests to be sent to kube API. Extend this class
-        to talk to kubernetes and generate your specific resources.
-        This is equivalent of generating yaml files that can be used
-        by `kubectl`
+    Create requests to be sent to kube API. Extend this class to talk to kubernetes and generate
+    your specific resources. This is equivalent of generating yaml files that can be used by
+    `kubectl`
     """
     __metaclass__ = ABCMeta
 
     @abstractmethod
     def create(self, pod):
         """
-            Creates the request for kubernetes API.
-            :param pod: The pod object
+        Creates the request for kubernetes API.
+
+        :param pod: The pod object
         """
         pass
 
@@ -80,7 +80,8 @@ class KubernetesRequestFactory():
     @staticmethod
     def attach_volume_mounts(pod, req):
         if len(pod.volume_mounts) > 0:
-            req['spec']['containers'][0]['volumeMounts'] = req['spec']['containers'][0].get('volumeMounts', [])
+            req['spec']['containers'][0]['volumeMounts'] = (
+                req['spec']['containers'][0].get('volumeMounts', []))
             req['spec']['containers'][0]['volumeMounts'].extend(pod.volume_mounts)
 
     @staticmethod
@@ -117,6 +118,27 @@ class KubernetesRequestFactory():
             for secret in env_secrets:
                 KubernetesRequestFactory.add_secret_to_env(env, secret)
             req['spec']['containers'][0]['env'] = env
+
+    @staticmethod
+    def extract_resources(pod, req):
+        if not pod.resources or pod.resources.is_empty_resource_request():
+            return
+
+        req['spec']['containers'][0]['resources'] = {}
+
+        if pod.resources.has_requests():
+            req['spec']['containers'][0]['resources']['requests'] = {}
+            if pod.resources.request_memory:
+                req['spec']['containers'][0]['resources']['requests']['memory'] = pod.resources.request_memory
+            if pod.resources.request_cpu:
+                req['spec']['containers'][0]['resources']['requests']['cpu'] = pod.resources.request_cpu
+
+        if pod.resources.has_limits():
+            req['spec']['containers'][0]['resources']['limits'] = {}
+            if pod.resources.request_memory:
+                req['spec']['containers'][0]['resources']['limits']['memory'] = pod.resources.limit_memory
+            if pod.resources.request_cpu:
+                req['spec']['containers'][0]['resources']['limits']['cpu'] = pod.resources.limit_cpu
 
     @staticmethod
     def extract_init_containers(pod, req):
