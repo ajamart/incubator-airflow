@@ -184,11 +184,12 @@ devel = [
     'jira',
     'lxml>=3.3.4',
     'mock',
-    'moto',
+    'moto==1.1.19',
     'nose',
     'nose-ignore-docstring==0.2',
     'nose-timer',
     'parameterized',
+    'qds-sdk>=1.9.6',
     'rednose',
     'paramiko',
     'requests_mock'
